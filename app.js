@@ -20,7 +20,6 @@ if(!config.get("jwtPrivateKey"))
 {
     console.error('WARNING : FATAL ERROR! jwtPrivateKey not defined');
     process.exit(1);
-    console.log('hello repo');
     
 }
 
