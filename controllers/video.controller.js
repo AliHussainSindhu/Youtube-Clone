@@ -4,7 +4,20 @@ const fs = require('fs');
 
 exports.getAllVideos = async (req,res) => {
 
-    const videos = await Video.find().sort({views:1});
+
+    //IMPLEMENTING PAGINATION MEANING THAT NOT THE ENTIRE VIDEOS IN THE DATABASE
+    //WOULD BE SENT TO THE CLIENT IN ONE GO RATHER A LIMIT WOULD BE SET TO DISPLAY
+    //THE VIDEOS BASED ON HOW MUCH THE USER WANTS TO SEE
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const skip = (page - 1) * limit;
+
+    const videos = await Video.find()
+                    .sort({views:1})
+                    .skip(skip)
+                    .limit(limit);
+                    
     if(videos.length===0)return res.status(200).send([]);
 
     return res.status(200).send(videos);

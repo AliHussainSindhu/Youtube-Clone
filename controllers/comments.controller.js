@@ -1,14 +1,12 @@
 const Comment = require('../models/comments.model');
 const User = require('../models/user.model');
-const Video = require('../models/video.model');
+//const Video = require('../models/video.model');
 const commentValidator = require('../validator/comment.validator');
-
-
 
 //THERE WILL BE A DROP-DOWN BUTTON UNDER THE 
 exports.getVideoComments = async (req,res) => {
 
-    const comments = await Comment.find({videoId : req.params.id});
+    const comments = await Comment.find({videoId : req.params.id})
     if(comments.length===0)return res.status(200).send([]);
 
     //NOW WE KNOW THAT WHEN DISPLAYING COMMENTS UNDER A VIDEO WE ALSO NEED
