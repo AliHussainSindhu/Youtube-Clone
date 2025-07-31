@@ -1,10 +1,11 @@
 const express = require('express');
 const app = express();
-const config = require('config');
 const users = require('./routes/user.routes');
 const videos = require('./routes/videos.routes');
 const comments = require('./routes/comments.routes');
 const playlists = require('./routes/playlist.routes');
+const error = require('./middleware/error');
+require('dotenv').config()
 const connectToDatabase = require('./start/db');
 
 
@@ -14,9 +15,10 @@ app.use('/api/users' , users);
 app.use('/api/videos' , videos);
 app.use('/api/comments' , comments);
 app.use('/api/playlists' , playlists);
+app.use(error);
 
 
-if(!config.get("jwtPrivateKey"))
+if(!process.env.JWT_PRIVATE_KEY)
 {
     console.error('WARNING : FATAL ERROR! jwtPrivateKey not defined');
     process.exit(1);

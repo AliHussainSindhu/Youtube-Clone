@@ -1,11 +1,11 @@
-const { required } = require('joi');
 const mongoose = require('mongoose');
 
 const videoSchema = new mongoose.Schema({
     userId : {
             type : mongoose.Types.ObjectId,
             ref : 'User',
-            required : true 
+            required : true,
+            index : true
     },
     title : {
         type : String,
@@ -27,7 +27,8 @@ const videoSchema = new mongoose.Schema({
     },
     createdOn : {
         type : Date,
-        default : Date.now()
+        default : Date.now(),
+        index : true
     }
 
 });

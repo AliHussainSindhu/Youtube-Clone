@@ -1,77 +1,92 @@
 const PlayList = require('../models/playlists.model');
+const PlayListItem = require('../models/playlistItems.model');
 const Video = require('../models/video.model');
-const playlistValidator = require('../validator/playlist.validator');
+const asyncMiddleware = require('../middleware/async');
 
 //TO MAKE A NEW PLAY-LIST
-exports.makeNewPlaylist = async (req,res) => {
+exports.makeNewPlayList = asyncMiddleware(async (req,res) => {
 
-    const {error,value} = playlistValidator(req.body);
-    if(error)return res.status(400).send(error.details[0].message);
-
-    const playList = new PlayList({
-        title : value.title,
+    const playlist = new PlayList({
+        title : req.body.title,
         userId : req.user._id
     });
 
-    await playList.save();
-    res.status(200).json({success : true, message:'Playlist created successfully'})
-}
+    await playlist.save();
+    res.status(200).json({success:true,message:'New playlist successfully created'});
+})
 
 //TO GET THE DETAILS OF A SPECIFIC PLAYLIST
-exports.getPlayListDetail = async (req,res) => {
+exports.getPlayListDetail = asyncMiddleware(async (req,res) => {
 
+
+
+    //FIRST FETCH THE RELEVANT DETAILS OF THAT PLAY-LIST
     const playlist = await PlayList.findById(req.params.id);
-    if(!playlist)return res.status(404).json({success : false , message : 'Playlist not found'});
+    if(!playlist)return res.status(404).send([]);
 
-    playlist.videos = playlist.videos.map(async (videoId) => {
+    const page = parseInt(req.params.page) || 1;
+    const limit = parseInt(req.params.limit) || 10;
+    const searchOrder = req.query.sort === 'asc' ? 1 : -1
 
-        const video = await Video.findById(videoId);
-        return {_id : video._id,
-            title:video.title,
-            userId : video.userId,
-            createdOn : video.createdOn
-        };
-    })
+    //NOW FETCH ALL THE VIDEOS BELONGING TO THAT PLAY-LIST
+    const items = await PlayListItem.find({playlistId : playlist._id})
+                                    .sort({addedOn : searchOrder})
+                                    .skip((page - 1) * limit)
+                                    .limit(limit)
+                                    .populate({
+                                        path : 'videoId',
+                                        select : '-__v -location -userId'
+                                    })
+                                    .select('-playListId -__v -_id')
+    
+    //NOW TO DISPLAY AT THE FRONT-END THE TOTAL PAGES WE HAVE AS WELL AS THE PAGE WE ARE CURRENTLY ON
+    const total = await PlayListItem.countDocuments({playlistId:playlist._id});
+    const totalPages = Math.ceil(total/limit);
 
-    res.status(200).json({success : true,  playlist});
-}
+    res.status(200).json({success : true , videos : items , total , totalPages , count : limit});
+
+})
 
 
 //TO ADD A NEW VIDEO TO A PLAY-LIST
-exports.addToAPlaylist = async function (req,res) {
+exports.addToAPlaylist = asyncMiddleware(async function (req,res) {
 
     const playlist = await PlayList.findById(req.params.id);
-    if(!playlist)return res.status(404).json({success:false,message:'Playlist not found'});
+    if(!playlist)return res.status(404).json({success : false, message:'PlayList not found'});
 
-    if(playlist.userId!==req.user._id)return res.status(404).json({success:false,message:'You can only add to your own playlist'})
+    if(playlist.userId!==req.user._id)return res.status(401).json({success:false,message:'You can only add to your own play-list'});
 
-    const videoId = await Video.findById(req.body.videoId);
-    if(!videoId)return res.status(404).json({success:false,message:'No such video exists'});
+    const video = await Video.findById(req.params.videoId);
+    if(!video)return res.status(404).json({success:false , message:'No such video exists'});
 
-    playlist.videos.push(req.body.videoId);
-    await playlist.save();
-    res.status(200).json({success:true,message:'Video added to playlist'});
+    const playlistItem = new PlayListItem({
+        playlistId : playlist._id,
+        videoId : video._id
+    });
+
+    await playlistItem.save();
+    res.status(200).json({success:true , message:'Video successfully added'});
     
-}
+})
 
 //TO DELETE A VIDEO FROM PLAYLIST
-exports.deletVideoFromPlaylist = async (req,res) => {
+exports.deletVideoFromPlaylist = asyncMiddleware(async (req,res) => {
 
     const playlist = await PlayList.findById(req.params.id);
     if(!playlist)return res.status(404).json({success:false,message:'No such playlist exists'});
 
+    //VALIDATING IF THE USER IS DELETING FROM HIS OWN PLAYLIST OR NOT
     if(playlist.userId!==req.user._id)return res.status(400).json({success:false , message : 'You can only delete videos from your play-list'});
 
-    const index = playlist.videos.findIndex((videoId) =>  videoId===req.body.videoId);
-    if(index===-1)return res.status(404).json({success:false,message:'No video found'});
+    const video = await Video.findById(req.params.videoId);
+    if(!video)return res.status(404).json({success:false,message:'No such video exists'});
 
-    playlist.videos.splice(index,1);
-    await playlist.save();
-    res.status(200).json({success:true,message:'Video successfully deleted'});
-}
+    await PlayListItem.deleteOne({playlistId : playlist._id , videoId : video._id});
+    res.status(200).json({success:true , message:'Video successfully deleted'});
+})
 
 //TO DELETE AN ENTIRE PLAY-LIST
-exports.deletePlaylist = async (req,res) => {
+exports.deletePlaylist = asyncMiddleware(async (req,res) => {
 
     const playlist = await PlayList.findById(req.params.id);
     if(!playlist)return res.status(404).json({success:false, message : 'No such playlist exists'});
@@ -81,4 +96,4 @@ exports.deletePlaylist = async (req,res) => {
     await PlayList.deleteOne({_id:req.params.id});
     res.status(200).json({success:true,message:'Video successfully deleted from play-list'});
     
-}
+})

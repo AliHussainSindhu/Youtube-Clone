@@ -8,6 +8,7 @@ module.exports = function(user) {
         password : Joi.string().required()
     });
 
+
     return schema.validate(user);
 
 }

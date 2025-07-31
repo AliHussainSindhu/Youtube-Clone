@@ -1,8 +1,8 @@
 const Video = require('../models/video.model');
-const videoValidator = require('../validator/video.validator');
 const fs = require('fs');
+const asyncMiddleware = require('../middleware/async');
 
-exports.getAllVideos = async (req,res) => {
+exports.getAllVideos = asyncMiddleware(async (req,res) => {
 
 
     //IMPLEMENTING PAGINATION MEANING THAT NOT THE ENTIRE VIDEOS IN THE DATABASE
@@ -21,12 +21,9 @@ exports.getAllVideos = async (req,res) => {
     if(videos.length===0)return res.status(200).send([]);
 
     return res.status(200).send(videos);
-}
+})
 
-exports.uploadVideo = async (req,res) => {
-    console.log(req.body)
-    const {error,value} = videoValidator(req.body);
-
+exports.uploadVideo = asyncMiddleware(async (req,res) => {
 
     //ALL THIS PARSING OF BOTH FORM-DATA AND FILE-DATA DONE BY MULTER
     if(error)
@@ -36,7 +33,7 @@ exports.uploadVideo = async (req,res) => {
         return res.status(400).send(error.details[0].message);
     }
 
-    const title = value.title;// THE NAME OF THE VIDEO SENT AS PART OF THE 
+    const title = req.body.title;// THE NAME OF THE VIDEO SENT AS PART OF THE 
     const filePath = req.file.path; //THE PATH TO THE UPLOADED FILE 
 
 
@@ -51,9 +48,9 @@ exports.uploadVideo = async (req,res) => {
 
 
     res.status(200).json({success : true , message : 'Video uploaded successfully'});
-}
+})
 
-exports.getSpecificVideo = async (req,res) => {
+exports.getSpecificVideo = asyncMiddleware(async (req,res) => {
 
     //FIRST CHECK IF THE VIDEO WITH GIVEN ID EXISTS OR NOT
     const video = await Video.findById(req.params.id);
@@ -87,9 +84,9 @@ exports.getSpecificVideo = async (req,res) => {
     //CREATE A STREAM A PIPE AND SEND DATA FROM THE GIVEN FILE TO THE CLIENT
     fs.createReadStream(filePath , {start,end}).pipe(res);
 
-}
+})
 
-exports.deleteVideo = async (req, res) => {
+exports.deleteVideo = asyncMiddleware(async (req, res) => {
         const video = await Video.findById(req.params.id);
         if (!video) return res.status(404).send('Video not found.');
 
@@ -105,10 +102,10 @@ exports.deleteVideo = async (req, res) => {
 
         await Video.findByIdAndDelete(req.params.id);
         res.status(200).send('Video successfully deleted.');
-};
+});
 
 
-exports.likeAVideo = async (req,res) => {
+exports.likeAVideo = asyncMiddleware(async (req,res) => {
 
     const video = await Video.findById(req.params.id);
     if(!video)return res.status(404).send('Video not found');
@@ -116,13 +113,11 @@ exports.likeAVideo = async (req,res) => {
     video.likes++;
 
     await video.save();
-    res.status(200).json({success:true , likes : video.likes});
-
-    
-}
+    res.status(200).json({success:true , likes : video.likes}); 
+})
 
 
-exports.viewOnAVideo = async (req,res) => {
+exports.viewOnAVideo = asyncMiddleware(async (req,res) => {
 
     const video = await Video.findById(req.params.id);
     if(!video)return res.status(404).send('Video not found');
@@ -132,10 +127,10 @@ exports.viewOnAVideo = async (req,res) => {
     await video.save();
     res.status(200).json({success:true , views:video.views});
 
-}
+})
 
 
-exports.searchVideos = async (req, res) => {
+exports.searchVideos = asyncMiddleware(async (req, res) => {
     const query = req.query.query;
 
     if (!query) return res.status(400).send('Search query missing');
@@ -145,4 +140,4 @@ exports.searchVideos = async (req, res) => {
     });
 
     res.status(200).json({success:true , videos});
-};
+});

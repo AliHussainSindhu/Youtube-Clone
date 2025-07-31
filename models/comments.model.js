@@ -10,7 +10,8 @@ const commentsSchema = new mongoose.Schema({
     videoId : {
             type : mongoose.Types.ObjectId,
             ref : 'Video',
-            required : true
+            required : true,
+            index : true
     },
     content : {
         type : String,
@@ -20,7 +21,8 @@ const commentsSchema = new mongoose.Schema({
     },
     addedOn : {
         type : Date,
-        default : Date.now()
+        default : Date.now(),
+        index : true
     }
 });
 

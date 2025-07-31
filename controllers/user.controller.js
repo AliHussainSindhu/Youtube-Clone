@@ -1,34 +1,28 @@
-const validateUser = require('../validator/user.validator');
-const validateLogin = require('../validator/login.validator');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 const _ = require('lodash');
 const mongoose = require('mongoose');
 const User = require('../models/user.model');
 const Video = require('../models/video.model');
 const PlayList = require('../models/playlists.model');
 const Comment = require('../models/comments.model');
-const config = require('config');
+const asyncMiddleware = require('../middleware/async');
+const transporter = require('../services/mailer.service');
 
 
-exports.registerUser = async (req,res) => {
-    
-    const {error,value} = validateUser(req.body);
-    if(error)return res.status(400).send(error.details[0].message);
+exports.registerUser = asyncMiddleware(async (req,res) => {
 
     //NOW CHECK IF EMAIL ALREADY REGISTERED
-    const exists = await User.findOne({email : value.email});
+    const exists = await User.findOne({email : req.body.email});
     if(exists)return res.status(400).json({success:false , message:'Email already registered!Try another mail'});
 
     //AN OBJECT(DOCUMENT) BASED ON THE USER MODEL
     const user = new User({
-        name : value.name,
-        email : value.email,
-        password : value.password
+        name : req.body.name,
+        email : req.body.email,
+        password : req.body.password
     });
 
-    try{
     //NOW HASH THE PASSWORD USING BCRYPT AND SALT
     const salt = await bcrypt.genSalt(12);
     user.password = await bcrypt.hash(user.password, salt);
@@ -36,70 +30,77 @@ exports.registerUser = async (req,res) => {
     await user.save();
 
     res.status(200).json({success:true , message:'User successfully registered'});
-    }
-    catch(err)
-    {
-        res.status(500).send('Something went wrong');
-    }
-}
+})
 
 
-exports.loginUser = async (req,res) => {
+exports.loginUser = asyncMiddleware(async (req,res) => {
 
-    const {error,value} = validateLogin(req.body);
-    if(error) return res.status(400).send(error.details[0].message);
-
-    const user = await User.findOne({email : value.email});
+    const user = await User.findOne({email : req.body.email});
     if(!user)return res.status(401).json({success:false , message : 'Invalid Email or password'});
 
-    const validPassword = await bcrypt.compare(value.password, user.password);
+    const validPassword = await bcrypt.compare(req.body.password, user.password);
     if(!validPassword)return res.status(401).json({success:false , message : 'Invalid email or password'});
 
     const token = user.generateAuthToken();
     res.header('x-auth-token' , token).status(200).json({success:true , message : 'Login Successful'});
 
-}
+})
 
 
-exports.getUserData = async (req,res) => {
+exports.getUserData = asyncMiddleware(async (req,res) => {
 
     const user = await User.findById(req.user._id)
-    res.status(200).json({success : true , user : _.pick(user, ['name' , 'email' , '_id'])});
-}
+                            .select('-password -__v')
+    res.status(200).json({success : true , user});
+})
 
 
-exports.getUserVideos = async (req,res) => {
+exports.getUserVideos = asyncMiddleware(async (req,res) => {
 
-    const videos = await Video.find({userId : req.user._id});
+    const page = parseInt(req.params.page) || 1;
+    const limit = parseInt(req.params.limit) || 10;
+    const sortOrder = req.query.sort === 'asc' ? 1 : -1
+
+    const videos = await Video.find({userId : req.user._id})
+                                .sort({createdOn : sortOrder})
+                                .skip((page - 1) * limit)
+                                .limit(limit)
+                              .select('-__v -userId -location')
+
+
     if(videos.length === 0) return res.status(404).send([]);
 
-    const cleanVideos = videos.map(video => _.omit(video.toObject(), ['__v', 'userId', 'location']));
-    res.status(200).json({success:true, cleanVideos});
-}
+    const totalVideos = await Video.countDocuments({userId:req.user._id});
+    const totalPages = Math.ceil(totalVideos/limit);
 
 
-exports.getUserPlayLists = async (req,res) => {
+    res.status(200).json({success:true, videos , totalVideos, totalPages , count : limit});
+})
 
-    let playlists = await PlayList.find({userId : req.user._id});
+
+exports.getUserPlayLists =asyncMiddleware( async (req,res) => {
+
+    const page = parseInt(req.params.page) || 1;
+    const limit = parseInt(req.params.limit) || 10;
+    const sortOrder = req.query.sort === 'asc' ? 1 : -1
+
+    let playlists = await PlayList.find({userId : req.user._id})
+                                  .sort({createdAt : sortOrder})
+                                  .skip((page - 1) * limit)
+                                  .limit(limit)
+                                  .select('-userId');
+
     if(playlists.length===0)return res.status(404).send([]);
 
-
-    const finalPlaylists = await Promise.all(playlists.map(async (playList) => {
-    const videos = await Promise.all(playList.videos.map(async (id) => {
-        const video = await Video.findById(id);
-        return _.omit(video.toObject(), ['__v', 'userId', 'location']);
-    }));
-    playList = playList.toObject(); 
-    playList.videos = videos;
-    return playList;
-}));
-
-    res.status(200).json({success:true , playlist : finalPlaylists});
-    
-}
+    const totalPlaylists = await PlayList.countDocuments({userId : req.user._id});
+    const totalPages = Math.ceil(totalPlaylists/limit);
 
 
-exports.deleteUser = async (req,res) => {
+    res.status(200).json({success:true , playlists , totalPlaylists , totalPages , count : limit});
+})
+
+
+exports.deleteUser = asyncMiddleware(async (req,res) => {
 
 
     const session = await mongoose.startSession();
@@ -121,32 +122,23 @@ exports.deleteUser = async (req,res) => {
     finally{
         await session.endSession();
     }
-}
+})
 
 
-exports.forgotPassword = async (req, res) => {
-  const { email } = req.body;
+exports.forgotPassword = asyncMiddleware(async (req, res) => {
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email : req.body.email });
   if (!user) return res.status(400).send('User not found.');
 
   const token = jwt.sign(
     { _id: user._id },
-    config.get('jwtPrivateKey'),
+    process.env.JWT_PRIVATE_KEY,
     { expiresIn: '15m' } 
   );
 
   const url = 'http://localhost:3000/api/users'
 
   const resetLink = `${url}/reset-password?token=${token}`;
-
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: 'mariacooper1900@gmail.com',
-      pass: 'vylz mxdx uqfq mbvi',
-    },
-  });
 
   const mailOptions = {
     from: 'mariacooper1900@getMaxListeners.com',
@@ -159,15 +151,15 @@ exports.forgotPassword = async (req, res) => {
 
   await transporter.sendMail(mailOptions);
   res.send('Password reset email sent.');
-};
+});
 
 
-exports.resetPassword = async (req,res) => {
+exports.resetPassword = asyncMiddleware(async (req,res) => {
 
      const  token = req.query.token;
      const newPassword = req.body.newPassword;
-  try {
-    const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+
+    const decoded = jwt.verify(token, process.env.JWT_PRIVATE_KEY);
     const user = await User.findById(decoded._id);
 
     if (!user) return res.status(400).send('Invalid user.');
@@ -179,8 +171,5 @@ exports.resetPassword = async (req,res) => {
     await user.save();
 
     res.send('Password has been reset successfully.');
-  } catch (err) {
-    res.status(400).send('Invalid or expired token.');
-  }
     
-}
+})
